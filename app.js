@@ -3,7 +3,7 @@ const express = require('express');
 const app = express();
 const port = process.env.PORT || 3000;
 
-const DEMO_API_KEY = "DEMO_SECRET_ABC123456789";
+// const AWS_SECRET_KEY = "AKIAIOSFODNN7EXAMPLE";  
 
 app.get('/', (req, res) => {
   res.send(`Hello DevSecOps! API key (env): ${process.env.MY_API_KEY || 'not set'}`);
