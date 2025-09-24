@@ -31,21 +31,20 @@ jobs:
       # Inject safe secrets dynamically (override hardcoded keys)
       - name: Inject secrets
         run: |
-          echo "PORT=3000" > .env
-          echo "API_KEY=${{ secrets.API_KEY }}" >> .env
-          echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" >> .env
-          # Remove any hardcoded dummy keys in app.js
-          sed -i 's/AKIA[0-9A-Z]\{16\}/REDACTED_BY_PIPELINE/g' app.js
+          echo "PORT=3000" > day1/.env
+          echo "API_KEY=${{ secrets.API_KEY }}" >> day1/.env
+          echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" >> day1/.env
+          sed -i 's/AKIA[0-9A-Z]\{16\}/REDACTED_BY_PIPELINE/g' day1/app.js
 
       # AFTER scan (should be zero leaks)
       - name: Run Gitleaks AFTER scan
-        run: gitleaks detect --no-git --source . --config Day-1/.gitleaks.toml --verbose --redact --report-path gitleaks-after.json || true
+        run: gitleaks detect --no-git --source . --config day1/.gitleaks.toml --verbose --redact --report-path gitleaks-after.json || true
 
       # Docker build & run
       - name: Build and run Node app
         run: |
-          docker build -t devsecops-node-app ./Day-1
-          docker run -d --env-file .env -p 3000:3000 devsecops-node-app
+          docker build -t devsecops-node-app ./day1
+          docker run -d --env-file day1/.env -p 3000:3000 devsecops-node-app
 
       # Upload scan reports
       - name: Upload Gitleaks Reports
