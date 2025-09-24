@@ -1,0 +1,8 @@
+title = "Gitleaks Config for DevSecOps Workshop"
+description = "Detect demo AWS secrets and other sensitive info"
+
+[[rules]]
+id = "aws-access-key-demo123"         
+description = "AWS Access Key"
+regex = '''AKIA[0-9A-Z]{16}'''
+tags = ["key","aws"]
