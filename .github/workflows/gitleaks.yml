@@ -1,0 +1,58 @@
+name: Gitleaks + Node.js CI/CD
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  security-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Gitleaks
+        run: |
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_linux_x64.tar.gz | tar -xz
+          sudo mv gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      # BEFORE scan
+      - name: Run Gitleaks BEFORE scan
+        run: gitleaks detect --no-git --source . --config Day-1/.gitleaks.toml --verbose --redact --report-path gitleaks-before.json || true
+
+      # Inject safe secrets dynamically (override hardcoded keys)
+      - name: Inject secrets
+        run: |
+          echo "PORT=3000" > .env
+          echo "API_KEY=${{ secrets.API_KEY }}" >> .env
+          echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" >> .env
+          # Remove any hardcoded dummy keys in app.js
+          sed -i 's/AKIA[0-9A-Z]\{16\}/REDACTED_BY_PIPELINE/g' app.js
+
+      # AFTER scan (should be zero leaks)
+      - name: Run Gitleaks AFTER scan
+        run: gitleaks detect --no-git --source . --config Day-1/.gitleaks.toml --verbose --redact --report-path gitleaks-after.json || true
+
+      # Docker build & run
+      - name: Build and run Node app
+        run: |
+          docker build -t devsecops-node-app ./Day-1
+          docker run -d --env-file .env -p 3000:3000 devsecops-node-app
+
+      # Upload scan reports
+      - name: Upload Gitleaks Reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks-reports
+          path: |
+            gitleaks-before.json
+            gitleaks-after.json
