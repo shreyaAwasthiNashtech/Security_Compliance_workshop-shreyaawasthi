@@ -1,0 +1,38 @@
+version: "3.8"
+
+services:
+  juice:
+    image: bkimminich/juice-shop:latest
+    container_name: juice-shop
+    ports:
+      - "3000:3000"
+    networks:
+      - zapnet
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sSf http://localhost:3000/ > /dev/null"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+
+  custom-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: day2-custom-app
+    ports:
+      - "3001:3001"
+    networks:
+      - zapnet
+    depends_on:
+      juice:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sSf http://localhost:3001/ > /dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+networks:
+  zapnet:
+    driver: bridge

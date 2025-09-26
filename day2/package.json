@@ -1,0 +1,12 @@
+{
+  "name": "devsecops-day2-owasp-zap",
+  "version": "1.0.0",
+  "description": "Small vulnerable app for OWASP ZAP demo",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}

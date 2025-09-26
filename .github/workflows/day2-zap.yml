@@ -1,0 +1,61 @@
+name: Day 2 - OWASP ZAP Scan
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  zap-scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Build custom app image
+        run: docker build -t day2-app ./day2
+
+      - name: Create docker network if missing
+        run: |
+          if ! docker network ls --format '{{.Name}}' | grep -q '^zapnet$'; then
+            docker network create zapnet
+          fi
+
+      - name: Run custom app container
+        run: |
+          docker run -d --name day2-app --network zapnet -p 3001:3001 day2-app
+          docker run --network zapnet --rm curlimages/curl:latest -sSf http://day2-app:3001/ || (docker logs day2-app && exit 1)
+
+      - name: Run OWASP ZAP baseline scan
+        run: |
+          mkdir -p day2/reports
+          docker run --rm --network host \
+            -v "${{ github.workspace }}/day2/reports":/zap/wrk/:rw \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py \
+              -t http://localhost:3000 \
+              -t http://localhost:3001 \
+              -r /zap/wrk/zap-report.html \
+              -J /zap/wrk/zap-report.json \
+              -m 120 \
+              -I
+
+      - name: Stop and remove custom app container
+        if: always()
+        run: |
+          docker stop day2-app || true
+          docker rm day2-app || true
+
+      - name: Upload ZAP reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-reports
+          path: |
+            day2/reports/zap-report.html
+            day2/reports/zap-report.json
