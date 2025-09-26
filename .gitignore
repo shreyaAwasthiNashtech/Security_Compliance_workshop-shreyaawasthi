@@ -23,3 +23,5 @@ error.log
 gitleaks-before.json
 gitleaks-after.json
 Day-1/tools/
+
+day2/reports
