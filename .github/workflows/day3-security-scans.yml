@@ -1,0 +1,125 @@
+name: Day 3 Security Scans
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  bandit_scan:
+    name: Bandit Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Bandit
+        run: pip install --no-cache-dir bandit
+
+      - name: Run Bandit scan
+        run: |
+          mkdir -p day3/reports
+          bandit -r day3 -f html -o day3/reports/bandit-report.html || true
+
+      - name: Upload Bandit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-report
+          path: day3/reports/bandit-report.html
+
+  semgrep_scan:
+    name: Semgrep Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Semgrep scan
+        uses: returntocorp/semgrep-action@v2
+        with:
+          config: auto
+          audit_on: push
+
+  gitleaks_scan:
+    name: Gitleaks Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Gitleaks
+        run: |
+          mkdir -p day3/reports
+          curl -sSL https://github.com/gitleaks/gitleaks/releases/latest/download/gitleaks-linux-amd64 -o /usr/local/bin/gitleaks
+          chmod +x /usr/local/bin/gitleaks
+
+      - name: Run Gitleaks
+        run: |
+          gitleaks detect --source . \
+            --report-format json \
+            --report-path day3/reports/gitleaks-report.json || true
+
+      - name: Upload Gitleaks report
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks-report
+          path: day3/reports/gitleaks-report.json
+
+  zap_scan:
+    name: OWASP ZAP Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Flask app Docker image
+        run: docker build -t day3-app day3
+
+      - name: Create Docker network
+        run: docker network create zapnet || true
+
+      - name: Start Flask app container
+        run: |
+          docker run -d --name day3-app --network zapnet -p 5000:5000 day3-app
+
+      - name: Wait for Flask app to be ready
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sSf http://localhost:5000/; then
+              echo "day3-app is up"
+              break
+            fi
+            echo "Waiting for day3-app... ($i/30)"
+            sleep 2
+          done
+
+      - name: Run ZAP Baseline Scan
+        run: |
+          mkdir -p day3/reports
+          docker run --rm --network zapnet \
+            -v "${GITHUB_WORKSPACE}/day3/reports":/zap/wrk/:rw \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py \
+              -t http://day3-app:5000 \
+              -r /zap/wrk/zap-report.html \
+              -J /zap/wrk/zap-report.json \
+              -m 10 \
+              -I || true
+
+      - name: Stop Flask app
+        run: |
+          docker stop day3-app || true
+          docker rm day3-app || true
+          docker network rm zapnet || true
+
+      - name: Upload ZAP reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-reports
+          path: |
+            day3/reports/zap-report.html
+            day3/reports/zap-report.json

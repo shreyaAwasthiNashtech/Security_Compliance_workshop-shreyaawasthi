@@ -3,11 +3,11 @@ import os
 
 app = Flask(__name__)
 
-API_KEY = "supersecret123"
+API_KEY = "12345-SECRET-KEY"
 
 @app.route('/')
 def home():
-    return "Day 3: Secure Coding Demo"
+    return "Welcome to Day 3: Secure Coding Demo"
 
 @app.route('/config')
 def config():

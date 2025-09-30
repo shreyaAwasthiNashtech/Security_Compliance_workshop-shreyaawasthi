@@ -8,7 +8,7 @@ This exercise demonstrates **CI/CD-based secure coding and code scanning** using
 1. **Flask Application**
    - Created a simple Python Flask app `app.py`.
    - Added intentionally vulnerable code:
-     - Hardcoded secret: `API_KEY = "supersecret123"`
+     - Hardcoded secret: `API_KEY = "12345-SECRET-KEY"`
      - Insecure input evaluation using `eval()`
      - Vulnerable dependency in `requirements.txt` (old Flask/Jinja2 versions)
      - Reflected XSS in `/search` endpoint
@@ -26,12 +26,13 @@ This exercise demonstrates **CI/CD-based secure coding and code scanning** using
      ```
 
 3. **CI/CD Pipeline**
-   - Created `.gitlab-ci.yml` with stages:
-     - **Bandit** → Generates `bandit-report.html`  
-     - **Semgrep** → Detects insecure code patterns  
-     - **Gitleaks** → Detects hardcoded secrets, generates `gitleaks-report.json`  
-     - **OWASP ZAP** → DAST scan of the running app, generates `zap-report.html`
-   - Configured each stage to save reports as CI/CD artifacts.
+  - `.github/workflows/day3-security.yml` runs automatically on every push/PR to `main`.
+- Jobs included:
+  - **Bandit** → Generates `bandit-report.html`
+  - **Semgrep** → Detects insecure code patterns
+  - **Gitleaks** → Detects hardcoded secrets, generates `gitleaks-report.json`
+  - **OWASP ZAP** → DAST scan of the running app, generates `zap-report.html` & `zap-report.json`
+- Each job uploads its report as an **artifact** for review.
 
 
 ## Commands Used
@@ -47,7 +48,9 @@ bandit -r app.py -f html -o reports/bandit-report.html
 semgrep --config=auto app.py
 
 ### Gitleaks Scan (local test)
-gitleaks detect -s . -r reports/gitleaks-report.json
+gitleaks detect --source . \
+  --report-format json \
+  --report-path reports/gitleaks-report.json
 
 ### OWASP ZAP Baseline Scan (local test)
 docker run --rm --network host \
