@@ -25,3 +25,12 @@ gitleaks-after.json
 Day-1/tools/
 
 day2/reports
+
+# day3/.gitignore
+__pycache__/
+*.pyc
+venv/
+.env
+day3/reports/
+reports/
+

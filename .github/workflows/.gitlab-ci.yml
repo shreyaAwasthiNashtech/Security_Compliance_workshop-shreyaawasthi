@@ -1,0 +1,106 @@
+# .gitlab-ci.yml
+# GitLab CI pipeline for Day 3: Bandit, Semgrep, Gitleaks, ZAP
+# NOTE: This pipeline uses Docker-in-Docker (dind) for the ZAP stage. Make sure your runner supports DinD.
+
+stages:
+  - bandit
+  - semgrep
+  - gitleaks
+  - zap
+
+variables:
+  # where reports will be saved inside the repo
+  REPORT_DIR: "day3/reports"
+  APP_IMAGE: "day3-app:latest"
+
+before_script:
+  - mkdir -p ${REPORT_DIR}
+
+# 1) Bandit scan - static security scan for Python
+bandit_scan:
+  stage: bandit
+  image: python:3.11-slim
+  script:
+    - pip install --no-cache-dir bandit
+    - mkdir -p ${REPORT_DIR}
+    - bandit -r day3 -f html -o ${REPORT_DIR}/bandit-report.html || true
+  artifacts:
+    paths:
+      - ${REPORT_DIR}/bandit-report.html
+    expire_in: 1 week
+
+# 2) Semgrep - pattern-based scanning (allow failure to avoid blocking)
+semgrep_scan:
+  stage: semgrep
+  image: returntocorp/semgrep:latest
+  script:
+    - semgrep --config auto day3 || true
+  allow_failure: true
+
+# 3) Gitleaks - detect secrets
+gitleaks_scan:
+  stage: gitleaks
+  image: zricethezav/gitleaks:latest
+  script:
+    - mkdir -p ${REPORT_DIR}
+    # run gitleaks on the repository; write JSON report
+    - gitleaks detect --source . --report-path ${REPORT_DIR}/gitleaks-report.json || true
+  artifacts:
+    paths:
+      - ${REPORT_DIR}/gitleaks-report.json
+    expire_in: 1 week
+
+# 4) DAST using OWASP ZAP - requires Docker-in-Docker (DinD)
+zap_scan:
+  stage: zap
+  image: docker:stable
+  services:
+    - docker:dind
+  variables:
+    DOCKER_DRIVER: overlay2
+    DOCKER_HOST: tcp://docker:2375
+  before_script:
+    # quick check that docker is available in the runner
+    - docker info
+  script:
+    - mkdir -p ${REPORT_DIR}
+
+    # Build the Flask app image
+    - docker build -t ${APP_IMAGE} day3
+
+    # Create network for the containers
+    - docker network create zapnet || true
+
+    # Start Juice Shop (optional - helps produce richer ZAP findings)
+    - docker run -d --name juice-shop --network zapnet -p 3000:3000 bkimminich/juice-shop:latest
+
+    # Start our vulnerable Flask app
+    - docker run -d --name day3-app --network zapnet -p 5000:5000 ${APP_IMAGE}
+
+    # Wait for the app to respond (max ~30 attempts)
+    - |
+      for i in $(seq 1 30); do
+        if docker run --network zapnet --rm curlimages/curl:latest -sSf http://day3-app:5000/ > /dev/null 2>&1; then
+          echo "day3-app is up"
+          break
+        fi
+        echo "Waiting for day3-app... ($i/30)"
+        sleep 2
+      done
+
+    # Run ZAP baseline scan against both targets and write HTML & JSON to the mounted folder
+    - docker run --rm --network zapnet -v "$CI_PROJECT_DIR/${REPORT_DIR}":/zap/wrk/:rw ghcr.io/zaproxy/zaproxy:stable \
+        zap-baseline.py -t http://day3-app:5000 -t http://juice-shop:3000 -r zap-report.html -J zap-report.json -m 10 -I || true
+
+    # Stop and remove containers
+    - docker stop day3-app || true
+    - docker rm day3-app || true
+    - docker stop juice-shop || true
+    - docker rm juice-shop || true
+    - docker network rm zapnet || true
+
+  artifacts:
+    paths:
+      - ${REPORT_DIR}/zap-report.html
+      - ${REPORT_DIR}/zap-report.json
+    expire_in: 1 week
