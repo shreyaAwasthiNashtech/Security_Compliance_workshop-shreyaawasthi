@@ -40,10 +40,17 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Run Semgrep scan
-        uses: returntocorp/semgrep-action@v2
+        uses: semgrep/semgrep-action@v1
         with:
           config: auto
-          audit_on: push
+          generateSarif: true
+          sarifFile: semgrep-results.sarif
+
+      - name: Upload Semgrep report
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-report
+          path: semgrep-results.sarif
 
   gitleaks_scan:
     name: Gitleaks Scan
