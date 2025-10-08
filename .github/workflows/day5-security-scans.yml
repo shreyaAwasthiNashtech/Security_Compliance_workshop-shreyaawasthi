@@ -93,9 +93,9 @@ jobs:
           name: checkov-report
           path: day5-reports/checkov-report.json
 
-      - name: Build app Docker image
+      - name: Build Flask app Docker image
         run: |
-          docker build -t day5-app ./app
+          docker build -t day5-app ./day5
 
       - name: Run Trivy image scan (docker image)
         run: |
