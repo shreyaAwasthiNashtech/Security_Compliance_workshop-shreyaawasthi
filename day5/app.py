@@ -3,7 +3,8 @@ from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-API_KEY = "DEMO_HARDCODED_SECRET_12345"
+import os
+API_KEY = os.getenv("APP_API_KEY", "placeholder_demo_key")
 
 @app.route("/")
 def home():
