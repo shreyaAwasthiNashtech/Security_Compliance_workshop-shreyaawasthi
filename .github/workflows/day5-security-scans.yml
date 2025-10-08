@@ -1,0 +1,143 @@
+name: Day 5 Security Scans
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  full_scan:
+    name: Full security scan (Bandit / Semgrep / Trivy / Checkov / Gitleaks / ZAP)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Create reports directory
+        run: mkdir -p day5-reports
+
+      - name: Install Bandit
+        run: pip install --no-cache-dir bandit
+
+      - name: Run Bandit
+        run: |
+          mkdir -p day5-reports
+          bandit -r app -f html -o day5-reports/bandit-report.html || true
+
+      - name: Upload Bandit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-report
+          path: day5-reports/bandit-report.html
+
+      - name: Install Semgrep
+        run: pip install --no-cache-dir semgrep
+
+      - name: Run Semgrep (SARIF)
+        run: |
+          semgrep ci --config auto --sarif -o day5-reports/semgrep-report.sarif || true
+
+      - name: Upload Semgrep report
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-report
+          path: day5-reports/semgrep-report.sarif
+
+      - name: Install Gitleaks binary
+        run: |
+          mkdir -p $GITHUB_WORKSPACE/tools
+          curl -sSL -o $GITHUB_WORKSPACE/tools/gitleaks https://github.com/gitleaks/gitleaks/releases/latest/download/gitleaks-linux-amd64 || true
+          chmod +x $GITHUB_WORKSPACE/tools/gitleaks
+          echo "$GITHUB_WORKSPACE/tools" >> $GITHUB_PATH
+
+      - name: Run Gitleaks
+        run: |
+          mkdir -p day5-reports
+          gitleaks detect --source . --report-format json --report-path day5-reports/gitleaks-report.json || true
+
+      - name: Upload Gitleaks report
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks-report
+          path: day5-reports/gitleaks-report.json
+
+      - name: Run Trivy dependency scan (filesystem)
+        run: |
+          mkdir -p day5-reports
+          docker run --rm -v "${{ github.workspace }}":/project aquasecurity/trivy:latest fs --security-checks vuln --format json -o /project/day5-reports/trivy-deps-report.json /project || true
+
+      - name: Upload Trivy deps report
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-deps-report
+          path: day5-reports/trivy-deps-report.json
+
+      - name: Install Checkov
+        run: pip install --no-cache-dir checkov
+
+      - name: Run Checkov (Terraform)
+        run: |
+          mkdir -p day5-reports
+          checkov -d infrastructure --compact --output json > day5-reports/checkov-report.json || true
+
+      - name: Upload Checkov report
+        uses: actions/upload-artifact@v4
+        with:
+          name: checkov-report
+          path: day5-reports/checkov-report.json
+
+      - name: Build app Docker image
+        run: |
+          docker build -t day5-app ./app
+
+      - name: Run Trivy image scan (docker image)
+        run: |
+          mkdir -p day5-reports
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasecurity/trivy:latest image --format json -o /github/workspace/day5-reports/trivy-docker-report.json day5-app || true
+
+      - name: Upload Trivy image report
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-docker-report
+          path: day5-reports/trivy-docker-report.json
+
+      - name: Start Flask app container
+        run: docker run -d --name day5-app -p 5000:5000 day5-app
+
+      - name: Wait for app to be ready
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sSf http://localhost:5000/; then
+              echo "app ready"
+              break
+            fi
+            echo "waiting..."
+            sleep 2
+          done
+
+      - name: Run OWASP ZAP baseline (DAST)
+        run: |
+          mkdir -p day5-reports
+          docker run --rm --network host -v "${{ github.workspace }}/day5-reports":/zap/wrk/:rw ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py -t http://localhost:5000 -r zap-report.html -J zap-report.json -m 10 -I || true
+
+      - name: Stop app container
+        run: |
+          docker stop day5-app || true
+          docker rm day5-app || true
+
+      - name: Upload ZAP reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-reports
+          path: |
+            day5-reports/zap-report.html
+            day5-reports/zap-report.json
+
